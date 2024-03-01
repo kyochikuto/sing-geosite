@@ -278,12 +278,8 @@ func mergeTags(data map[string][]geosite.Item) {
 	println("merged cn categories: " + strings.Join(cnCodeList, ","))
 }
 
-func generate(release *github.RepositoryRelease, output string, cnOutput string, ruleSetOutput string) error {
-	vData, err := download(release)
-	if err != nil {
-		return err
-	}
-	domainMap, err := parse(vData)
+func generate(data []byte, output string, ruleSetOutput string) error {
+	domainMap, err := parse(data)
 	if err != nil {
 		return err
 	}
@@ -297,22 +293,6 @@ func generate(release *github.RepositoryRelease, output string, cnOutput string,
 	}
 	defer outputFile.Close()
 	err = geosite.Write(outputFile, domainMap)
-	if err != nil {
-		return err
-	}
-	cnCodes := []string{
-		"geolocation-cn",
-	}
-	cnDomainMap := make(map[string][]geosite.Item)
-	for _, cnCode := range cnCodes {
-		cnDomainMap[cnCode] = domainMap[cnCode]
-	}
-	cnOutputFile, err := os.Create(cnOutput)
-	if err != nil {
-		return err
-	}
-	defer cnOutputFile.Close()
-	err = geosite.Write(cnOutputFile, cnDomainMap)
 	if err != nil {
 		return err
 	}
@@ -355,7 +335,7 @@ func setActionOutput(name string, content string) {
 	os.Stdout.WriteString("::set-output name=" + name + "::" + content + "\n")
 }
 
-func release(source string, destination string, output string, cnOutput string, ruleSetOutput string) error {
+func release(source string, destination string, output string, ruleSetOutput string) error {
 	sourceRelease, err := fetch(source)
 	if err != nil {
 		return err
@@ -370,7 +350,11 @@ func release(source string, destination string, output string, cnOutput string, 
 			return nil
 		}
 	}
-	err = generate(sourceRelease, output, cnOutput, ruleSetOutput)
+	data, err := download(destinationRelease)
+	if err != nil {
+		return err
+	}
+	err = generate(data, output, ruleSetOutput)
 	if err != nil {
 		return err
 	}
@@ -378,14 +362,26 @@ func release(source string, destination string, output string, cnOutput string, 
 	return nil
 }
 
+func local(input string, output string, sourceName string, ruleSetOutput string) error {
+	data, err := os.ReadFile(input)
+	if err != nil {
+		return err
+	}
+	err = generate(data, output, ruleSetOutput)
+	if err != nil {
+		return err
+	}
+	setActionOutput("tag", sourceName)
+	return nil
+}
+
 func main() {
-	err := release(
-		"v2fly/domain-list-community",
-		"sagernet/sing-geosite",
-		"geosite.db",
-		"geosite-cn.db",
-		"rule-set",
-	)
+	var err error
+	if len(os.Args) >= 4 {
+		err = local(os.Args[1], os.Args[2], os.Args[3], os.Args[4])
+	} else {
+		err = release("v2fly/domain-list-community", "sagernet/sing-geosite", "geosite.db", "rule-set")
+	}
 	if err != nil {
 		log.Fatal(err)
 	}
